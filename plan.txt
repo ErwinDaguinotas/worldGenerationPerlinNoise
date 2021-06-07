@@ -1,0 +1,22 @@
+Plan
+	x, y
+
+	class Chunk
+		cx, cy, texture, sprite, cells
+
+	struct coordinate
+		x, y
+		operator <
+
+	map visibleChunks<coordinate, Chunk>
+
+	function update
+		prevchunk, curchunk
+		while true
+			get curchunk
+			if chunk change
+				copy visiblechunks
+				modify copyvisiblechunks
+				overwrite visiblechunks
+			prevchunk = curchunk
+		

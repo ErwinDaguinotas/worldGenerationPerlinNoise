@@ -2,6 +2,8 @@
 #include <vector>
 #include <cmath>
 #include <thread>
+#include <map>
+#include <string>
 
 #include <SFML/Audio.hpp>
 #include <SFML/Graphics.hpp>
@@ -11,251 +13,88 @@
 
 using namespace std;
 
-struct Chunk
-{
-	int *cells;
-	Chunk (int, int, int);
-};
+sf::Mutex mutex;
 
-Chunk::Chunk(int cx=0, int cy=0, int chunkWidth=0)
+vector<vector<int>> cCoor;
+vector<vector<int>> cCells;
+int renderDistance;
+int cellWpx = 25;
+int chunkWcell = 4;
+int chunkWpx = chunkWcell * cellWpx;
+int ppx = 0;
+int ppy = 0;
+bool running = true;
+
+tuple<int, int> getChunk (int ppx, int ppy)
 {
-	int val = abs(cx * cy);
-	cells = new int[chunkWidth * chunkWidth];
-	for (int i = 0; i < chunkWidth; i++)
-	for (int j = 0; j < chunkWidth; j++)
-	{	
-		int cellIndex = i * chunkWidth + j;
-		cells[cellIndex] = val;
+	int cx = ppx / (chunkWcell * cellWpx);
+	int cy = ppy / (chunkWcell * cellWpx);
+	if (ppx < 0) cx -= 1;
+	if (ppy < 0) cy -= 1;
+	tuple<int, int> tup(cx, cy);
+	return tup;
+}
+
+void renderChunks()
+{
+	int lcx, lcy;
+	lcx = lcy = 1;
+	while (running)
+	{
+		vector<vector<int>> scCoor;
+		vector<vector<int>> scCells;
+		int cx, cy;
+		tie(cx, cy) = getChunk(ppx, ppy);
+		if (cx == lcx && cy == lcy) continue;
+		lcx = cx; lcy = cy;
+		for (int i = -renderDistance; i < renderDistance + 1; i++)
+			for (int j = -renderDistance; j < renderDistance + 1; j++)
+			{
+				int val = abs((cx + j) * (cy + i)) % 5;
+				int ccx, ccy;
+				ccx = cx + j;
+				ccy = cy + i;
+				vector<int> coor = {ccx, ccy};
+				vector<int> cells;
+				for (int k = 0; k < chunkWcell * chunkWcell; k++)
+					cells.push_back(val);
+				scCoor.push_back(coor);
+				scCells.push_back(cells);
+			}
+		mutex.lock();
+		cCoor = scCoor;
+		cCells = scCells;
+		mutex.unlock();
 	}
 }
 
-struct Chunker 
-{
-	bool isRendering;
-
-	int renderDistance;
-
-	int mapWidth;
-	int mapWidthChunks;
-	int mapWidthCells;
-	int mapWidthPx;
-	int mapChunkNum;
-	int chunkWidth;
-	int chunkWidthPx;
-	int chunkCellNum;
-	int cellWidth;
-
-	int cursx;
-	int cursy;
-
-	int curcx;
-	int curcy;
-
-	int curpx;
-	int curpy;
-
-	int dcx;
-	int dcy;
-
-	int sx;
-	int sy;
-
-	bool alive = true;
-
-	sf::RenderTexture tMap;
-	sf::Sprite sMap;
-	Chunk *map;
-
-	Chunker (int, int, int);
-	void move(int, int);
-	void changeStart();
-};
-
-Chunker::Chunker(int renderDistance, int chunkWidth, int cellWidth)
-{
-	this->isRendering = false;
-
-	this->renderDistance = renderDistance;
-
-	this->mapWidth = renderDistance * 2 + 1;
-	this->mapWidthCells = mapWidth * chunkWidth;
-	this->mapWidthPx = mapWidthCells * cellWidth;
-	this->mapChunkNum = pow(mapWidth, 2);
-	this->chunkWidth = chunkWidth;
-	this->chunkWidthPx = chunkWidth * cellWidth;
-	this->chunkCellNum = pow(chunkWidth, 2);
-	this->cellWidth = cellWidth;
-
-	this->cursx = 0;
-	this->cursy = 0;
-
-	this->curcx = 0;
-	this->curcy = 0;
-
-	this->curpx = 0;
-	this->curpy = 0;
-
-	this->dcx = 0;
-	this->dcy = 0;
-
-	this->sx = 0;
-	this->sy = 0;
-
-	this->tMap.create(mapWidthPx, mapWidthPx);
-	this->sMap.setTexture(tMap.getTexture());
-	this->map = new Chunk[mapChunkNum];
-	for (int i = 0; i < mapWidth; i++)
-	for (int j = 0; j < mapWidth; j++)
-	{
-
-		int chunkIndex = i * mapWidth + j;
-		map[chunkIndex];
-		Chunk chunk = Chunk(j, i, chunkWidth);
-		map[chunkIndex] = chunk;
-	}
-}
-
-void Chunker::move(int px, int py)
-{
-	this->curpx = px;
-	this->curpy = py;
-
-	// calculating new cx, cy
-	int ncx = curpx / (cellWidth * chunkWidth);
-	if (curpx < 0) ncx -= 1;
-	int ncy = curpy / (cellWidth * chunkWidth);
-	if (curpy < 0) ncy -= 1;
-
-	// calculating differences
-	this->dcx = ncx - curcx;
-	this->dcy = ncy - curcy;
-
-	//assigning
-	this->curcx = ncx;
-	this->curcy = ncy;
-
-}
-
-void Chunker::changeStart()
-{	
-	this->sx = curcx * chunkWidthPx - (renderDistance * chunkWidthPx);
-	this->sy = curcy * chunkWidthPx - (renderDistance * chunkWidthPx);	
-	sMap.setPosition(sx, sy);
-}
-
-
-void update(Chunker &c)
-{
-	c.isRendering = true;
-	if (c.dcx == 0 && c.dcy == 0) 
-	{
-		c.isRendering = false;
-		return;
-	}	
-
-	// copy value from c here
-	int renderDistance = c.renderDistance;
-	int mapWidth = c.mapWidth; 
-	int mapWidthCells = c.mapWidthCells;
-	int mapWidthPx = c.mapWidthPx; 
-	int mapChunkNum = c.mapChunkNum; 
-	int chunkWidth = c.chunkWidth; 
-	int chunkWidthPx = c.chunkWidthPx; 
-	int cellWidth = c.cellWidth; 
-	int curcx = c.curcx;
-	int curcy = c.curcy;
-
-	Chunk *map = new Chunk[c.mapChunkNum];
-	// for (int i = 0; i < mapWidth; i++)
-	// for (int j = 0; j < mapWidth; j++)
-	// {
-	// 	int chunkIndex = i * mapWidth + j;
-	// 	map[chunkIndex] = c.map[chunkIndex];
-	// }
-
-	// creating the new map based on curcx, curcy
-	for (int i = -renderDistance; i < renderDistance + 1; i++)
-	{
-	for (int j = -renderDistance; j < renderDistance + 1; j++)
-	{
-		int chunkIndex = ((i + renderDistance) * mapWidth) + (j + renderDistance);
-		Chunk chunk = Chunk(curcx + j, curcy - i, chunkWidth);
-		map[chunkIndex] = chunk;
-	}
-	}
-
-	// drawing the map to a texture
-	using namespace sf;
-	RenderTexture tRect;
-	tRect.create(1, 1);
-	Sprite sRect;
-	sRect.setScale(cellWidth, cellWidth);
-	sRect.setTexture(tRect.getTexture());
-	RenderTexture tMap;
-	tMap.create(mapWidthPx, mapWidthPx);
-	Sprite sMap;
-	sMap.setTexture(tMap.getTexture());
-
-	for (int i = 0; i < mapWidthCells; i++)
-	for (int j = 0; j < mapWidthCells; j++)
-	{
-		int cx = j / chunkWidth;
-		int cy = i / chunkWidth;
-
-
-		int cellx = j % chunkWidth;
-		int celly = i % chunkWidth;
-
-		int chunkIndex = cy * mapWidth + cx;
-		int cellIndex = celly * chunkWidth + cellx;
-
-		Chunk chunk = map[chunkIndex];
-		int val = chunk.cells[cellIndex];
-		int col = 51 * val;
-		tRect.clear(Color(col, col, col));
-		sRect.setPosition(cx * chunkWidthPx + cellx * cellWidth, cy * chunkWidthPx + celly * cellWidth);
-		tRect.display();
-		
-		tMap.draw(sRect);
-	}
-	tMap.display();
-	std::copy(map, map+mapChunkNum, c.map);
-
-	c.isRendering = false;
-	c.changeStart();
-	c.sMap.setPosition(c.sx, c.sy);
-	c.tMap.draw(sMap);
-}
-
-int intx = 0;
-int inty = 0;
-Chunker c(3, 10, 50);
-sf::RenderTexture tMap;
-sf::Sprite sMap;
-void chunkThread()
-{
-tMap.create(c.mapWidthPx, c.mapWidthPx);
-sMap.setTexture(tMap.getTexture());
-	while (c.alive)
-	{
-		c.move(intx, inty);
-		update(c);
-		tMap.draw(c.sMap);
-	}
-}
 
 int main() {
+	cout << "Enter render distance" << endl;
+	cin >> renderDistance;
+
 	using namespace sf;
 	srand(time(0));
 	RenderWindow window;
 	window.create(VideoMode(300, 300), "WINDOW");
 
-
 	RenderTexture textureRect;
 	textureRect.create(1, 1);
-	textureRect.clear(Color(255,0,0));
 	Sprite spriteRect;
 	spriteRect.setTexture(textureRect.getTexture());
+
+	// loading map textures
+	RenderTexture a; a.create(cellWpx, cellWpx); a.clear(Color(255, 0, 0));
+	RenderTexture b; b.create(cellWpx, cellWpx); b.clear(Color(200, 55, 0));
+	RenderTexture c; c.create(cellWpx, cellWpx); c.clear(Color(150, 105, 0));
+	RenderTexture d; d.create(cellWpx, cellWpx); d.clear(Color(100, 155, 0));
+	RenderTexture e; e.create(cellWpx, cellWpx); e.clear(Color(50, 205, 0));
+	Sprite aa(a.getTexture());
+	Sprite bb(b.getTexture());
+	Sprite cc(c.getTexture());
+	Sprite dd(d.getTexture());
+	Sprite ee(e.getTexture());
+	vector<Sprite> tileSprites = {aa, bb, cc, dd, ee};
 
 	View playerView;
 	playerView.setSize(300, 300);
@@ -274,7 +113,8 @@ int main() {
 	float x, y;
 	x = y = 0;
 	
-	std::thread t(chunkThread);
+	Thread t(&renderChunks);
+	t.launch();
 
 	Event event;
 	while(window.isOpen()) {
@@ -288,8 +128,9 @@ int main() {
 			{
 			case Event::Closed:
 				window.close();
-				c.alive = false;
+				running = false;
 				break;
+
 			case Event::KeyPressed:
 				switch (event.key.code)
 				{
@@ -303,6 +144,7 @@ int main() {
 				case Keyboard::D:	kd	= true; break;
 				}
 				break;
+
 			case Event::KeyReleased:
 				switch (event.key.code)
 				{
@@ -332,13 +174,14 @@ int main() {
 		if (kw) playerView.zoom(1+0.9f*dt.asSeconds()); 
 		x += dcx; y += dcy;
 		playerView.setCenter(x, y);
-		intx = x; inty = y;
+		ppx = x; ppy = y;
 
 
 
 		if (timeNow - lastSecond >= seconds(1))
 		{
 			lastSecond = timeNow;
+			std::cout << "FPS: " << fps << std::endl;
 			fps = 0;
 		}
 
@@ -351,19 +194,33 @@ int main() {
 
 			window.setView(playerView);
 
-			window.draw(sMap);
+			mutex.lock();
+			spriteRect.setScale(cellWpx, cellWpx);
+			for (int i = 0; i < cCoor.size(); i++)
+			{
+				int sx = cCoor[i][0] * chunkWpx;
+				int sy = cCoor[i][1] * chunkWpx;
 
+				for (int j = 0; j < cCells[i].size(); j++)
+				{
+					int cellx = j % chunkWcell;
+					int celly = j / chunkWcell;
+					int bx = sx + cellx * cellWpx;
+					int by = sy + celly * cellWpx;
+					tileSprites[cCells[i][j]].setPosition(bx, by);
+					window.draw(tileSprites[cCells[i][j]]);
+				}
+				// std::cout << cCoor[i][0] << " " << cCoor[i][1] << std::endl;
+			}
+			mutex.unlock();
+
+			// drawing the character
 			spriteRect.setPosition(x-25, y-25);
 			spriteRect.setScale(50, 50);
 			textureRect.clear(Color(150,255,0));
 			window.draw(spriteRect);
 
-			textureRect.clear(Color::Yellow);
-			spriteRect.setPosition(0, 0);
-			spriteRect.setScale(c.cellWidth*4, c.cellWidth*4);
-			window.draw(spriteRect);
 			window.display();
-
 		}
 
 	}
