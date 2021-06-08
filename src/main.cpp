@@ -13,6 +13,13 @@
 
 using namespace std;
 
+void printmany(vector<float> m)
+{
+	for (float i : m)
+		cout << i << "\t";
+	cout << endl;
+}
+
 sf::Mutex mutex;
 
 vector<vector<int>> cCoor;
@@ -24,6 +31,64 @@ int chunkWpx = chunkWcell * cellWpx;
 int ppx = 0;
 int ppy = 0;
 bool running = true;
+float high = 0.f;
+float low = 0.f;
+
+vector<sf::Sprite> tileSprites;
+
+float interpolate(float s, float e, float x)
+{
+	return (e - s) * x + s;
+}
+
+struct Gradient{
+	float x, y;
+};
+
+float grads[4][2] = 
+{
+	{.7071, .7071},
+	{.7071, -.7071},
+	{-.7071, -.7071},
+	{-.7071, .7071}
+};
+
+Gradient randomGradient(int cx, int cy) 
+{
+	int random = 2920.f * sin(cx * 21942.f + cy * 171324.f + 8912.f) * cos(cx * 23157.f * cy * 217832.f + 9758.f);
+	Gradient grad; 
+	grad.x = grads[random % 4][0];//cos(random);
+	grad.y = grads[random % 4][1];//sin(random);
+	return grad;
+}
+
+float dot(int cx, int cy, float lx, float ly) {
+    Gradient gradient = randomGradient(cx, cy);
+
+    float dx = lx;
+    float dy = ly;
+
+    return (dx*gradient.x + dy*gradient.y);
+}
+
+float perlin(int cx, int cy, int cellx, int celly) {
+	float lx = (cellx + 0.5) / chunkWcell;
+	float ly = (celly + 0.5) / chunkWcell;
+
+	float tl = dot(cx, cy, -lx, -ly);
+	float tr = dot(cx + 1, cy, 1 - lx, -ly);
+	float dl = dot(cx, cy + 1, -lx, 1 - ly);
+	float dr = dot(cx + 1, cy + 1, 1 - lx, 1 - ly);
+
+	float top = interpolate(tl, tr, lx);
+	float bot = interpolate(dl, dr, lx);
+	float mid = interpolate(top, bot, ly);
+
+	if (mid > high) high = mid;
+	else if (mid < low) low = mid;
+	int val = (mid + 1) * tileSprites.size() / 2;
+	return val;
+}
 
 tuple<int, int> getChunk (int ppx, int ppy)
 {
@@ -50,14 +115,18 @@ void renderChunks()
 		for (int i = -renderDistance; i < renderDistance + 1; i++)
 			for (int j = -renderDistance; j < renderDistance + 1; j++)
 			{
-				int val = abs((cx + j) * (cy + i)) % 5;
 				int ccx, ccy;
 				ccx = cx + j;
 				ccy = cy + i;
 				vector<int> coor = {ccx, ccy};
 				vector<int> cells;
 				for (int k = 0; k < chunkWcell * chunkWcell; k++)
+				{
+					int cellx = k % chunkWcell;
+					int celly = k / chunkWcell;
+					int val = perlin(cx+j, cy+i, cellx, celly);
 					cells.push_back(val);
+				}
 				scCoor.push_back(coor);
 				scCells.push_back(cells);
 			}
@@ -72,32 +141,38 @@ void renderChunks()
 int main() {
 	cout << "Enter render distance" << endl;
 	cin >> renderDistance;
-
 	using namespace sf;
 	srand(time(0));
-	RenderWindow window;
-	window.create(VideoMode(300, 300), "WINDOW");
 
-	RenderTexture textureRect;
-	textureRect.create(1, 1);
-	Sprite spriteRect;
-	spriteRect.setTexture(textureRect.getTexture());
+	int screenW = 800;
+	int screenH = 600;
+
+	RenderWindow window;
+	window.create(VideoMode(screenW, screenH), "WINDOW");
+
+	Texture bumblebee;
+	bumblebee.loadFromFile("rsrc/bumblebee.png");
+	Sprite sbumblebee(bumblebee);
 
 	// loading map textures
-	RenderTexture a; a.create(cellWpx, cellWpx); a.clear(Color(255, 0, 0));
-	RenderTexture b; b.create(cellWpx, cellWpx); b.clear(Color(200, 55, 0));
-	RenderTexture c; c.create(cellWpx, cellWpx); c.clear(Color(150, 105, 0));
-	RenderTexture d; d.create(cellWpx, cellWpx); d.clear(Color(100, 155, 0));
-	RenderTexture e; e.create(cellWpx, cellWpx); e.clear(Color(50, 205, 0));
-	Sprite aa(a.getTexture());
-	Sprite bb(b.getTexture());
-	Sprite cc(c.getTexture());
-	Sprite dd(d.getTexture());
-	Sprite ee(e.getTexture());
-	vector<Sprite> tileSprites = {aa, bb, cc, dd, ee};
+	Texture tile0; tile0.loadFromFile("rsrc/tile0.png");
+	Texture tile1; tile1.loadFromFile("rsrc/tile1.png");
+	Texture tile2; tile2.loadFromFile("rsrc/tile2.png");
+	Sprite stile0(tile0);
+	Sprite stile1(tile1);
+	Sprite stile2(tile2);
+	tileSprites.push_back(stile0);
+	tileSprites.push_back(stile0);
+	tileSprites.push_back(stile0);
+	tileSprites.push_back(stile0);
+	tileSprites.push_back(stile1);
+	tileSprites.push_back(stile2);
+	tileSprites.push_back(stile2);
+	tileSprites.push_back(stile2);
+	tileSprites.push_back(stile2);
 
 	View playerView;
-	playerView.setSize(300, 300);
+	playerView.setSize(screenW, screenH);
 
 	Clock clock;
 	Time dt = seconds(0);
@@ -168,8 +243,8 @@ int main() {
 		if (down) dcy += n;
 		if (right) dcx += n;
 		if (left) dcx -= n;
-		if (ka) playerView.rotate(360.f*dt.asSeconds());
-		if (kd) playerView.rotate(-360.f*dt.asSeconds());
+		if (ka) playerView.rotate(90.f*dt.asSeconds());
+		if (kd) playerView.rotate(-90.f*dt.asSeconds());
 		if (ks) playerView.zoom(1-0.9f*dt.asSeconds()); 
 		if (kw) playerView.zoom(1+0.9f*dt.asSeconds()); 
 		x += dcx; y += dcy;
@@ -181,7 +256,7 @@ int main() {
 		if (timeNow - lastSecond >= seconds(1))
 		{
 			lastSecond = timeNow;
-			std::cout << "FPS: " << fps << std::endl;
+			std::cout << "FPS: " << fps  << " high: " << high << " low: " << low << std::endl;
 			fps = 0;
 		}
 
@@ -195,7 +270,6 @@ int main() {
 			window.setView(playerView);
 
 			mutex.lock();
-			spriteRect.setScale(cellWpx, cellWpx);
 			for (int i = 0; i < cCoor.size(); i++)
 			{
 				int sx = cCoor[i][0] * chunkWpx;
@@ -215,10 +289,8 @@ int main() {
 			mutex.unlock();
 
 			// drawing the character
-			spriteRect.setPosition(x-25, y-25);
-			spriteRect.setScale(50, 50);
-			textureRect.clear(Color(150,255,0));
-			window.draw(spriteRect);
+			sbumblebee.setPosition(x-cellWpx/2, y-cellWpx/2);
+			window.draw(sbumblebee);
 
 			window.display();
 		}
